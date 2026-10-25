@@ -13,6 +13,8 @@
     }
     canvas {
       display: block;
+      /* Avoid nearest-neighbor upscaling if the widget scale disagrees with the buffer. */
+      image-rendering: auto;
     }
   </style>
   <script src="p5.min.js"></script>
@@ -41,9 +43,29 @@
   var g1, g2;
   var b1, b2;
 
+  var patternSeed = 1;
+
   window.LANIAKEA_CONFIG = {
     maskMode: 'circle',
   };
+
+  /** GTK/Wayland often scales the window while WebKit still reports devicePixelRatio=1. */
+  function effectiveDensity() {
+    var dpr = window.devicePixelRatio || 1;
+    var gtk = window.LANIAKEA_GTK_SCALE || 1;
+    return Math.max(1, dpr, gtk);
+  }
+
+  function applyPixelDensity() {
+    if (typeof pixelDensity !== 'function')
+      return;
+    pixelDensity(effectiveDensity());
+  }
+
+  function strokeWeightForCanvas() {
+    // Soft ribbons instead of sub-pixel dots (those read as chunky pixels).
+    return Math.max(1.1, Math.min(2.4, width / 1100));
+  }
 
   function initPoints() {
     points = [];
@@ -71,7 +93,15 @@
   }
 
   function stepPoints() {
+    var weight = strokeWeightForCanvas();
+    strokeWeight(weight);
+    strokeCap(ROUND);
+    strokeJoin(ROUND);
+
     for (var i = 0; i < points.length; i++) {
+      var ox = points[i].x;
+      var oy = points[i].y;
+
       var r = map(points[i].x, 0, width, r1, r2);
       var g = map(points[i].x, 0, height, g1, g2);
       var b = map(points[i].x, 0, width, b1, b2);
@@ -80,11 +110,9 @@
         dist(width / 2, height / 2, points[i].x, points[i].y),
         0,
         height / 2,
-        255,
+        220,
         0,
       );
-
-      fill(r, g, b, alpha);
 
       var angle = map(
         noise(points[i].x * mult, points[i].y * mult),
@@ -96,15 +124,23 @@
 
       points[i].add(createVector(cos(angle), sin(angle)));
 
-      if (isInsideDrawMask(points[i].x, points[i].y))
-        ellipse(points[i].x, points[i].y, 0.5);
+      if (isInsideDrawMask(points[i].x, points[i].y)) {
+        stroke(r, g, b, alpha);
+        // Short segment = continuous filament, not a hard pixel speck.
+        line(ox, oy, points[i].x, points[i].y);
+      }
     }
   }
 
-  function resetDrawing() {
+  function resetDrawing(keepSeed) {
     if (typeof width === 'undefined' || width === 0)
       return;
 
+    if (!keepSeed)
+      patternSeed = Math.floor(Math.random() * 1e9) + 1;
+
+    randomSeed(patternSeed);
+    noiseSeed(patternSeed);
     background(20);
     initPoints();
     initColors();
@@ -115,14 +151,7 @@
 
   function setMaskMode(mode) {
     window.LANIAKEA_CONFIG.maskMode = mode || 'circle';
-    resetDrawing();
-  }
-
-  function exportPngDataUrl() {
-    var canvas = document.querySelector('canvas');
-    if (!canvas)
-      return '';
-    return canvas.toDataURL('image/png');
+    resetDrawing(false);
   }
 
   function isInsideDrawMask(x, y) {
@@ -135,38 +164,93 @@
     );
   }
 
+  /**
+   * Full-resolution wallpaper capture (native pixels), same seeded pattern.
+   */
+  function exportWallpaperPng(targetW, targetH, frameCount) {
+    targetW = Math.max(640, Math.floor(targetW || 1920));
+    targetH = Math.max(360, Math.floor(targetH || 1080));
+    frameCount = Math.max(80, Math.floor(frameCount || 240));
+
+    var previewW = windowWidth;
+    var previewH = windowHeight;
+    var seed = patternSeed;
+
+    noLoop();
+    pixelDensity(1);
+    resizeCanvas(targetW, targetH);
+    randomSeed(seed);
+    noiseSeed(seed);
+    background(20);
+    initPoints();
+    initColors();
+
+    for (var f = 0; f < frameCount; f++)
+      stepPoints();
+
+    var canvas = document.querySelector('canvas');
+    var url = canvas ? canvas.toDataURL('image/png') : '';
+
+    applyPixelDensity();
+    resizeCanvas(previewW, previewH);
+    randomSeed(seed);
+    noiseSeed(seed);
+    background(20);
+    initPoints();
+    initColors();
+    var catchup = Math.min(100, frameCount);
+    for (var c = 0; c < catchup; c++)
+      stepPoints();
+    loop();
+
+    return url;
+  }
+
+  function exportPngDataUrl() {
+    var canvas = document.querySelector('canvas');
+    return canvas ? canvas.toDataURL('image/png') : '';
+  }
+
   function setup() {
+    applyPixelDensity();
     createCanvas(windowWidth, windowHeight);
+    // Antialiased strokes — important once we draw lines instead of 0.5px dots.
+    smooth();
     background(20);
     angleMode(DEGREES);
     noiseDetail(1);
-
+    noFill();
+    patternSeed = Math.floor(Math.random() * 1e9) + 1;
+    randomSeed(patternSeed);
+    noiseSeed(patternSeed);
     initPoints();
     initColors();
   }
 
   function draw() {
-    noStroke();
     stepPoints();
   }
 
   function mousePressed() {
     if (isInsideDrawMask(mouseX, mouseY))
-      resetDrawing();
+      resetDrawing(false);
   }
 
   function windowResized() {
+    applyPixelDensity();
     resizeCanvas(windowWidth, windowHeight);
-    resetDrawing();
+    resetDrawing(true);
   }
 
   window.setup = setup;
   window.draw = draw;
   window.windowResized = windowResized;
   window.mousePressed = mousePressed;
-  window.resetDrawing = resetDrawing;
+  window.resetDrawing = function () { resetDrawing(false); };
   window.setMaskMode = setMaskMode;
   window.exportPngDataUrl = exportPngDataUrl;
+  window.exportWallpaperPng = exportWallpaperPng;
+  window.applyPixelDensity = applyPixelDensity;
 </script>
 
 </body>

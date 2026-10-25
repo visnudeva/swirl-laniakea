@@ -21,6 +21,7 @@ from laniakea.config import (
     save_config,
     wallpaper_output_path,
 )
+from laniakea.display import wallpaper_pixel_size
 from laniakea.wallpaper import apply_with_swaybg, save_png_bytes
 
 
@@ -73,12 +74,19 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         settings.set_enable_write_console_messages_to_stdout(True)
         settings.set_allow_file_access_from_file_urls(True)
         settings.set_allow_universal_access_from_file_urls(True)
+        try:
+            settings.set_hardware_acceleration_policy(
+                WebKit.HardwareAccelerationPolicy.ALWAYS
+            )
+        except (AttributeError, TypeError):
+            pass
 
         root = web_root()
         index = root / "index.html"
         if not index.is_file():
             raise SystemExit(f"missing web assets at {root}")
         self._view.connect("load-changed", self._on_load_changed)
+        self.connect("notify::scale-factor", self._on_scale_factor)
         self._view.load_uri(index.resolve().as_uri())
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -87,11 +95,39 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         Gtk.Widget.set_vexpand(self._view, True)
         self.set_content(box)
 
+    def _gtk_scale(self) -> float:
+        try:
+            return float(self.get_scale_factor())
+        except Exception:
+            return 1.0
+
+    def _inject_scale_and_mask(self) -> None:
+        mode = self._cfg["mask_mode"]
+        scale = self._gtk_scale()
+        self._run_js(
+            f"window.LANIAKEA_GTK_SCALE = {scale};"
+            f"if (typeof applyPixelDensity === 'function') {{"
+            f"  applyPixelDensity();"
+            f"  if (typeof resizeCanvas === 'function' && typeof windowWidth === 'number')"
+            f"    resizeCanvas(windowWidth, windowHeight);"
+            f"}}"
+            f"if (typeof setMaskMode === 'function') setMaskMode({mode!r});"
+        )
+
+    def _on_scale_factor(self, *_args) -> None:
+        scale = self._gtk_scale()
+        self._run_js(
+            f"window.LANIAKEA_GTK_SCALE = {scale};"
+            f"if (typeof applyPixelDensity === 'function') {{"
+            f"  applyPixelDensity();"
+            f"  if (typeof windowResized === 'function') windowResized();"
+            f"}}"
+        )
+
     def _on_load_changed(self, _view: WebKit.WebView, event: WebKit.LoadEvent) -> None:
         if event != WebKit.LoadEvent.FINISHED:
             return
-        mode = self._cfg["mask_mode"]
-        self._run_js(f"setMaskMode({mode!r});")
+        self._inject_scale_and_mask()
 
     def _on_mask_changed(self, dropdown: Gtk.DropDown, *_args) -> None:
         idx = int(dropdown.get_selected())
@@ -110,9 +146,12 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         if self._busy:
             return
         self._busy = True
-        self._status.set_label("Capturing…")
+        width, height = wallpaper_pixel_size(self)
+        # More frames on bigger canvases so the field fills in before capture.
+        frames = max(180, min(360, (width * height) // 12000))
+        self._status.set_label(f"Rendering {width}×{height}…")
         self._view.evaluate_javascript(
-            "exportPngDataUrl()",
+            f"exportWallpaperPng({width}, {height}, {frames})",
             -1,
             None,
             None,
