@@ -17,7 +17,7 @@ This is the Wayland / Swirl sibling of the [GNOME Shell extension](https://githu
 - **Click to regenerate** — primary-click inside the shape mask to start a new drawing
 - **Shape masks** — limit where particles appear (circle, triangles, diamond, hexagon, rectangles, or full screen)
 - **Apply to desktop** — writes `~/Pictures/Wallpapers/laniakea.png` and sets it with swaybg / waypaper
-- **Resize-friendly** — tiling keeps the artwork (stretched to fill); it does not wipe and re-roll
+- **Resize-friendly** — tiling scales the artwork uniformly (no stretch, no wipe); open large for a full-size buffer
 - **Offline** — p5.js is vendored; no CDN required
 
 ## Customization

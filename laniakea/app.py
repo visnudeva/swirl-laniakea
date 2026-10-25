@@ -151,12 +151,16 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
             f"if (typeof applyPixelDensity === 'function') applyPixelDensity();"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
             f"if (typeof setMaskMode === 'function') setMaskMode({mode!r});"
         )
 
     def _on_scale_factor(self, *_args) -> None:
         scale = self._gtk_scale()
-        self._run_js(f"window.LANIAKEA_GTK_SCALE = {scale};")
+        self._run_js(
+            f"window.LANIAKEA_GTK_SCALE = {scale};"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
+        )
 
     def _on_load_changed(self, _view: WebKit.WebView, event: WebKit.LoadEvent) -> None:
         if event != WebKit.LoadEvent.FINISHED:

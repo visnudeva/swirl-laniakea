@@ -12,10 +12,13 @@
       height: 100%;
       overflow: hidden;
       background: #141414;
+      position: relative;
     }
     canvas {
       display: block;
       image-rendering: auto;
+      position: absolute;
+      margin: 0;
     }
   </style>
   <script src="p5.min.js"></script>
@@ -45,6 +48,9 @@
   var b1, b2;
 
   var patternSeed = 1;
+  // Fixed bitmap from first layout. Resize only reflows CSS (uniform scale).
+  var drawW = 0;
+  var drawH = 0;
 
   window.LANIAKEA_CONFIG = {
     maskMode: 'circle',
@@ -62,13 +68,33 @@
     pixelDensity(effectiveDensity());
   }
 
-  // Same mid-weight look as when you said the drawing looked good (pre-letterbox).
+  // Locked — do not change stroke/mask sizing (user-approved quality).
   function particleSize() {
     return Math.max(0.7, Math.min(1.25, width / 1500));
   }
 
   function strokeWeightForCanvas() {
     return Math.max(0.45, Math.min(0.9, width / 2000));
+  }
+
+  /**
+   * Show the fixed canvas centered with uniform scale (no stretch / no wipe).
+   * Never scale above 1 so maximising after a tile stays sharp.
+   */
+  function fitCanvasInViewport() {
+    var canvas = document.querySelector('canvas');
+    if (!canvas || !drawW || !drawH)
+      return;
+
+    var vw = window.innerWidth || drawW;
+    var vh = window.innerHeight || drawH;
+    var scale = Math.min(1, vw / drawW, vh / drawH);
+    var dw = Math.max(1, Math.round(drawW * scale));
+    var dh = Math.max(1, Math.round(drawH * scale));
+    canvas.style.width = dw + 'px';
+    canvas.style.height = dh + 'px';
+    canvas.style.left = Math.floor((vw - dw) / 2) + 'px';
+    canvas.style.top = Math.floor((vh - dh) / 2) + 'px';
   }
 
   function initPoints() {
@@ -208,7 +234,9 @@
 
   function setup() {
     applyPixelDensity();
-    createCanvas(windowWidth, windowHeight);
+    drawW = Math.max(320, windowWidth);
+    drawH = Math.max(240, windowHeight);
+    createCanvas(drawW, drawH);
     smooth();
     background(20);
     angleMode(DEGREES);
@@ -218,6 +246,7 @@
     noiseSeed(patternSeed);
     initPoints();
     initColors();
+    fitCanvasInViewport();
   }
 
   function draw() {
@@ -229,30 +258,9 @@
       resetDrawing(false);
   }
 
-  /**
-   * Fill the window again (full-size mask/shape). Keep the existing artwork —
-   * stretch the snapshot and scale particle positions. Never wipe / re-roll.
-   */
   function windowResized() {
-    if (typeof width === 'undefined' || width === 0)
-      return;
-    if (windowWidth === width && windowHeight === height)
-      return;
-
-    var oldW = width;
-    var oldH = height;
-    var snap = get();
-
-    applyPixelDensity();
-    resizeCanvas(windowWidth, windowHeight);
-    image(snap, 0, 0, width, height);
-
-    var sx = width / oldW;
-    var sy = height / oldH;
-    for (var i = 0; i < points.length; i++) {
-      points[i].x *= sx;
-      points[i].y *= sy;
-    }
+    // Bitmap and mask stay as-is — only the on-screen scale changes.
+    fitCanvasInViewport();
   }
 
   window.setup = setup;
@@ -264,6 +272,7 @@
   window.exportPngDataUrl = exportPngDataUrl;
   window.exportWallpaperPng = exportWallpaperPng;
   window.applyPixelDensity = applyPixelDensity;
+  window.fitCanvasInViewport = fitCanvasInViewport;
 </script>
 
 </body>
