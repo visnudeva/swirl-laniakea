@@ -212,8 +212,12 @@
     );
   }
 
-  // Apply/export path restored from the last known-good version (pre-zoom
-  // experiments): snapshot the live canvas, cover-scale to the display.
+  /**
+   * After letterbox resize, the window shows the FULL canvas (uniform scale).
+   * The old Apply used cover (Math.max), which crops that same bitmap to the
+   * monitor — that is the zoom. Mirror the on-screen letterbox with contain
+   * (Math.min) into a monitor-sized PNG; swaybg fill then displays it 1:1.
+   */
   function exportWallpaperPng(targetW, targetH) {
     var src = document.querySelector('#stage canvas') || document.querySelector('canvas');
     if (!src)
@@ -237,8 +241,8 @@
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, targetW, targetH);
 
-    // Same picture, cover-fit like swaybg -m fill.
-    var scale = Math.max(targetW / src.width, targetH / src.height);
+    // Same framing as fitCanvasInViewport: uniform scale, full shape visible.
+    var scale = Math.min(targetW / src.width, targetH / src.height);
     var dw = src.width * scale;
     var dh = src.height * scale;
     var dx = (targetW - dw) / 2;
