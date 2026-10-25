@@ -173,50 +173,45 @@
   }
 
   /**
-   * Full-resolution wallpaper capture (native pixels), same seeded pattern.
+   * Snapshot what is on screen (WYSIWYG). Optionally scale to the monitor
+   * size with high-quality smoothing — never re-simulate a different drawing.
    */
-  function exportWallpaperPng(targetW, targetH, frameCount) {
-    targetW = Math.max(640, Math.floor(targetW || 1920));
-    targetH = Math.max(360, Math.floor(targetH || 1080));
-    frameCount = Math.max(80, Math.floor(frameCount || 240));
+  function exportWallpaperPng(targetW, targetH) {
+    var src = document.querySelector('canvas');
+    if (!src)
+      return '';
 
-    var previewW = windowWidth;
-    var previewH = windowHeight;
-    var seed = patternSeed;
+    // Exact pixels of the live drawing (includes HiDPI backing store).
+    if (!targetW || !targetH)
+      return src.toDataURL('image/png');
 
-    noLoop();
-    pixelDensity(1);
-    resizeCanvas(targetW, targetH);
-    randomSeed(seed);
-    noiseSeed(seed);
-    background(20);
-    initPoints();
-    initColors();
+    targetW = Math.max(640, Math.floor(targetW));
+    targetH = Math.max(360, Math.floor(targetH));
 
-    for (var f = 0; f < frameCount; f++)
-      stepPoints();
+    if (src.width === targetW && src.height === targetH)
+      return src.toDataURL('image/png');
 
-    var canvas = document.querySelector('canvas');
-    var url = canvas ? canvas.toDataURL('image/png') : '';
+    var out = document.createElement('canvas');
+    out.width = targetW;
+    out.height = targetH;
+    var ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#141414';
+    ctx.fillRect(0, 0, targetW, targetH);
 
-    applyPixelDensity();
-    resizeCanvas(previewW, previewH);
-    randomSeed(seed);
-    noiseSeed(seed);
-    background(20);
-    initPoints();
-    initColors();
-    var catchup = Math.min(100, frameCount);
-    for (var c = 0; c < catchup; c++)
-      stepPoints();
-    loop();
-
-    return url;
+    // Same picture, cover-fit like swaybg -m fill.
+    var scale = Math.max(targetW / src.width, targetH / src.height);
+    var dw = src.width * scale;
+    var dh = src.height * scale;
+    var dx = (targetW - dw) / 2;
+    var dy = (targetH - dh) / 2;
+    ctx.drawImage(src, dx, dy, dw, dh);
+    return out.toDataURL('image/png');
   }
 
   function exportPngDataUrl() {
-    var canvas = document.querySelector('canvas');
-    return canvas ? canvas.toDataURL('image/png') : '';
+    return exportWallpaperPng();
   }
 
   function setup() {

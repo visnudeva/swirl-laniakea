@@ -147,11 +147,10 @@ class LaniakeaWindow(Adw.ApplicationWindow):
             return
         self._busy = True
         width, height = wallpaper_pixel_size(self)
-        # More frames on bigger canvases so the field fills in before capture.
-        frames = max(180, min(360, (width * height) // 12000))
-        self._status.set_label(f"Rendering {width}×{height}…")
+        self._status.set_label(f"Saving what you see → {width}×{height}…")
+        # Snapshot the live canvas (WYSIWYG), scaled to the display if needed.
         self._view.evaluate_javascript(
-            f"exportWallpaperPng({width}, {height}, {frames})",
+            f"exportWallpaperPng({width}, {height})",
             -1,
             None,
             None,
