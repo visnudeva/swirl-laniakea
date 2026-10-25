@@ -8,13 +8,19 @@
     body, html {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: #141414;
+      position: relative;
     }
     canvas {
       display: block;
-      /* Avoid nearest-neighbor upscaling if the widget scale disagrees with the buffer. */
       image-rendering: auto;
+      /* Letterboxed / centered when the GTK window aspect changes. */
+      position: absolute;
+      inset: 0;
+      margin: auto;
     }
   </style>
   <script src="p5.min.js"></script>
@@ -44,12 +50,14 @@
   var b1, b2;
 
   var patternSeed = 1;
+  // Fixed drawing buffer — window resizes only reflow CSS, never reset the art.
+  var drawW = 0;
+  var drawH = 0;
 
   window.LANIAKEA_CONFIG = {
     maskMode: 'circle',
   };
 
-  /** GTK/Wayland often scales the window while WebKit still reports devicePixelRatio=1. */
   function effectiveDensity() {
     var dpr = window.devicePixelRatio || 1;
     var gtk = window.LANIAKEA_GTK_SCALE || 1;
@@ -63,13 +71,31 @@
   }
 
   function particleSize() {
-    // Between the old 0.5px specks and the thicker ribbon look.
     return Math.max(0.7, Math.min(1.25, width / 1500));
   }
 
   function strokeWeightForCanvas() {
-    // Hairline links — softer than dots alone, finer than the v0.1.1 ribbons.
     return Math.max(0.45, Math.min(0.9, width / 2000));
+  }
+
+  /** Keep the bitmap size fixed; scale+center the canvas in the WebView. */
+  function fitCanvasInViewport() {
+    var canvas = document.querySelector('canvas');
+    if (!canvas || !drawW || !drawH)
+      return;
+
+    var vw = window.innerWidth || drawW;
+    var vh = window.innerHeight || drawH;
+    var scale = Math.min(vw / drawW, vh / drawH);
+    var dw = Math.max(1, Math.floor(drawW * scale));
+    var dh = Math.max(1, Math.floor(drawH * scale));
+    canvas.style.width = dw + 'px';
+    canvas.style.height = dh + 'px';
+    canvas.style.left = Math.floor((vw - dw) / 2) + 'px';
+    canvas.style.top = Math.floor((vh - dh) / 2) + 'px';
+    canvas.style.right = 'auto';
+    canvas.style.bottom = 'auto';
+    canvas.style.margin = '0';
   }
 
   function initPoints() {
@@ -130,7 +156,6 @@
       points[i].add(createVector(cos(angle), sin(angle)));
 
       if (isInsideDrawMask(points[i].x, points[i].y)) {
-        // Hairline trail + small antialiased dot: midway between v0.1.0 and v0.1.1.
         stroke(r, g, b, alpha * 0.85);
         line(ox, oy, points[i].x, points[i].y);
         noStroke();
@@ -172,16 +197,11 @@
     );
   }
 
-  /**
-   * Snapshot what is on screen (WYSIWYG). Optionally scale to the monitor
-   * size with high-quality smoothing — never re-simulate a different drawing.
-   */
   function exportWallpaperPng(targetW, targetH) {
     var src = document.querySelector('canvas');
     if (!src)
       return '';
 
-    // Exact pixels of the live drawing (includes HiDPI backing store).
     if (!targetW || !targetH)
       return src.toDataURL('image/png');
 
@@ -200,7 +220,6 @@
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, targetW, targetH);
 
-    // Same picture, cover-fit like swaybg -m fill.
     var scale = Math.max(targetW / src.width, targetH / src.height);
     var dw = src.width * scale;
     var dh = src.height * scale;
@@ -216,8 +235,9 @@
 
   function setup() {
     applyPixelDensity();
-    createCanvas(windowWidth, windowHeight);
-    // Antialiased strokes — important once we draw lines instead of 0.5px dots.
+    drawW = Math.max(320, windowWidth);
+    drawH = Math.max(240, windowHeight);
+    createCanvas(drawW, drawH);
     smooth();
     background(20);
     angleMode(DEGREES);
@@ -227,6 +247,7 @@
     noiseSeed(patternSeed);
     initPoints();
     initColors();
+    fitCanvasInViewport();
   }
 
   function draw() {
@@ -239,9 +260,8 @@
   }
 
   function windowResized() {
-    applyPixelDensity();
-    resizeCanvas(windowWidth, windowHeight);
-    resetDrawing(true);
+    // Do not resizeCanvas / resetDrawing — keep the same centered artwork.
+    fitCanvasInViewport();
   }
 
   window.setup = setup;
@@ -253,6 +273,7 @@
   window.exportPngDataUrl = exportPngDataUrl;
   window.exportWallpaperPng = exportWallpaperPng;
   window.applyPixelDensity = applyPixelDensity;
+  window.fitCanvasInViewport = fitCanvasInViewport;
 </script>
 
 </body>

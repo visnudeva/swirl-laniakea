@@ -11,8 +11,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("WebKit", "6.0")
+gi.require_version("Pango", "1.0")
 
-from gi.repository import Adw, Gio, GLib, Gtk, WebKit
+from gi.repository import Adw, Gio, GLib, Gtk, Pango, WebKit
 
 from laniakea.config import (
     MASK_MODE_LABELS,
@@ -23,6 +24,9 @@ from laniakea.config import (
 )
 from laniakea.display import wallpaper_pixel_size
 from laniakea.wallpaper import apply_with_swaybg, save_png_bytes
+
+# Match Swirl default_decoration border_radius.
+_CORNER_RADIUS_PX = 8
 
 
 def web_root() -> Path:
@@ -35,19 +39,53 @@ def web_root() -> Path:
     return Path(__file__).resolve().parents[1] / "share" / "laniakea" / "web"
 
 
+def _install_window_css_for_display(display) -> None:
+    css = f"""
+    window.laniakea-window {{
+      border-radius: {_CORNER_RADIUS_PX}px;
+    }}
+    window.laniakea-window headerbar {{
+      border-top-left-radius: {_CORNER_RADIUS_PX}px;
+      border-top-right-radius: {_CORNER_RADIUS_PX}px;
+    }}
+    """
+    provider = Gtk.CssProvider()
+    provider.load_from_data(css.encode("utf-8"))
+    Gtk.StyleContext.add_provider_for_display(
+        display,
+        provider,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+    )
+
+
 class LaniakeaWindow(Adw.ApplicationWindow):
     def __init__(self, app: Adw.Application) -> None:
         super().__init__(application=app, title="Laniakea")
+        self.add_css_class("laniakea-window")
         self.set_default_size(960, 640)
+        # Keep chrome usable when tiled to half a laptop screen.
+        self.set_size_request(420, 320)
         self._cfg = load_config()
         self._busy = False
 
+        display = self.get_display()
+        if display is not None:
+            _install_window_css_for_display(display)
+
+        self._install_actions()
+
         toolbar = Adw.HeaderBar()
-        self._status = Gtk.Label(label="Drawing… click inside the mask to redraw")
+        self._status = Gtk.Label(
+            label="Drawing… click the mask to redraw",
+            ellipsize=Pango.EllipsizeMode.END,
+            max_width_chars=18,
+            hexpand=True,
+        )
         self._status.add_css_class("dim-label")
         toolbar.set_title_widget(self._status)
 
         self._mask = Gtk.DropDown.new_from_strings(MASK_MODE_LABELS)
+        self._mask.set_tooltip_text("Shape mask")
         try:
             idx = MASK_MODE_VALUES.index(self._cfg["mask_mode"])
         except ValueError:
@@ -56,15 +94,20 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         self._mask.connect("notify::selected", self._on_mask_changed)
         toolbar.pack_start(self._mask)
 
-        redraw = Gtk.Button(label="Redraw")
-        redraw.connect("clicked", lambda *_: self._run_js("resetDrawing();"))
-        toolbar.pack_end(redraw)
+        # Compact actions so half-width tiles still expose every control.
+        menu = Gio.Menu()
+        menu.append("Redraw", "win.redraw")
+        menu.append("Save PNG", "win.save")
+        menu.append("Apply wallpaper", "win.apply")
+        menu_btn = Gtk.MenuButton(
+            menu_model=menu,
+            icon_name="open-menu-symbolic",
+            tooltip_text="Actions",
+        )
+        toolbar.pack_end(menu_btn)
 
-        save_btn = Gtk.Button(label="Save PNG")
-        save_btn.connect("clicked", lambda *_: self._export(apply=False))
-        toolbar.pack_end(save_btn)
-
-        apply_btn = Gtk.Button(label="Apply wallpaper")
+        apply_btn = Gtk.Button(label="Apply")
+        apply_btn.set_tooltip_text("Apply wallpaper")
         apply_btn.add_css_class("suggested-action")
         apply_btn.connect("clicked", lambda *_: self._export(apply=True))
         toolbar.pack_end(apply_btn)
@@ -74,9 +117,10 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         settings.set_enable_write_console_messages_to_stdout(True)
         settings.set_allow_file_access_from_file_urls(True)
         settings.set_allow_universal_access_from_file_urls(True)
+        # Hardware layers often ignore Swirl's border_radius clip; paint in-tree instead.
         try:
             settings.set_hardware_acceleration_policy(
-                WebKit.HardwareAccelerationPolicy.ALWAYS
+                WebKit.HardwareAccelerationPolicy.NEVER
             )
         except (AttributeError, TypeError):
             pass
@@ -89,11 +133,20 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         self.connect("notify::scale-factor", self._on_scale_factor)
         self._view.load_uri(index.resolve().as_uri())
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        box.append(toolbar)
-        box.append(self._view)
-        Gtk.Widget.set_vexpand(self._view, True)
-        self.set_content(box)
+        toolbar_view = Adw.ToolbarView()
+        toolbar_view.add_top_bar(toolbar)
+        toolbar_view.set_content(self._view)
+        self.set_content(toolbar_view)
+
+    def _install_actions(self) -> None:
+        for name, callback in (
+            ("redraw", lambda *_: self._run_js("resetDrawing();")),
+            ("save", lambda *_: self._export(apply=False)),
+            ("apply", lambda *_: self._export(apply=True)),
+        ):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", callback)
+            self.add_action(action)
 
     def _gtk_scale(self) -> float:
         try:
@@ -104,13 +157,12 @@ class LaniakeaWindow(Adw.ApplicationWindow):
     def _inject_scale_and_mask(self) -> None:
         mode = self._cfg["mask_mode"]
         scale = self._gtk_scale()
+        # First load only: set density + mask. Do not resizeCanvas (that would
+        # fight the fixed drawing buffer / letterbox layout).
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
-            f"if (typeof applyPixelDensity === 'function') {{"
-            f"  applyPixelDensity();"
-            f"  if (typeof resizeCanvas === 'function' && typeof windowWidth === 'number')"
-            f"    resizeCanvas(windowWidth, windowHeight);"
-            f"}}"
+            f"if (typeof applyPixelDensity === 'function') applyPixelDensity();"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
             f"if (typeof setMaskMode === 'function') setMaskMode({mode!r});"
         )
 
@@ -118,10 +170,7 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         scale = self._gtk_scale()
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
-            f"if (typeof applyPixelDensity === 'function') {{"
-            f"  applyPixelDensity();"
-            f"  if (typeof windowResized === 'function') windowResized();"
-            f"}}"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
         )
 
     def _on_load_changed(self, _view: WebKit.WebView, event: WebKit.LoadEvent) -> None:
@@ -148,7 +197,6 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         self._busy = True
         width, height = wallpaper_pixel_size(self)
         self._status.set_label(f"Saving what you see → {width}×{height}…")
-        # Snapshot the live canvas (WYSIWYG), scaled to the display if needed.
         self._view.evaluate_javascript(
             f"exportWallpaperPng({width}, {height})",
             -1,
