@@ -62,9 +62,14 @@
     pixelDensity(effectiveDensity());
   }
 
+  function particleSize() {
+    // Between the old 0.5px specks and the thicker ribbon look.
+    return Math.max(0.7, Math.min(1.25, width / 1500));
+  }
+
   function strokeWeightForCanvas() {
-    // Soft ribbons instead of sub-pixel dots (those read as chunky pixels).
-    return Math.max(1.1, Math.min(2.4, width / 1100));
+    // Hairline links — softer than dots alone, finer than the v0.1.1 ribbons.
+    return Math.max(0.45, Math.min(0.9, width / 2000));
   }
 
   function initPoints() {
@@ -94,9 +99,9 @@
 
   function stepPoints() {
     var weight = strokeWeightForCanvas();
+    var size = particleSize();
     strokeWeight(weight);
     strokeCap(ROUND);
-    strokeJoin(ROUND);
 
     for (var i = 0; i < points.length; i++) {
       var ox = points[i].x;
@@ -110,7 +115,7 @@
         dist(width / 2, height / 2, points[i].x, points[i].y),
         0,
         height / 2,
-        220,
+        235,
         0,
       );
 
@@ -125,9 +130,12 @@
       points[i].add(createVector(cos(angle), sin(angle)));
 
       if (isInsideDrawMask(points[i].x, points[i].y)) {
-        stroke(r, g, b, alpha);
-        // Short segment = continuous filament, not a hard pixel speck.
+        // Hairline trail + small antialiased dot: midway between v0.1.0 and v0.1.1.
+        stroke(r, g, b, alpha * 0.85);
         line(ox, oy, points[i].x, points[i].y);
+        noStroke();
+        fill(r, g, b, alpha);
+        ellipse(points[i].x, points[i].y, size);
       }
     }
   }
@@ -219,7 +227,6 @@
     background(20);
     angleMode(DEGREES);
     noiseDetail(1);
-    noFill();
     patternSeed = Math.floor(Math.random() * 1e9) + 1;
     randomSeed(patternSeed);
     noiseSeed(patternSeed);
