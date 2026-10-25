@@ -212,39 +212,16 @@
     );
   }
 
-  function exportWallpaperPng(targetW, targetH) {
-    var src = document.querySelector('canvas');
+  /**
+   * Exact live canvas pixels — no cover/contain resample.
+   * Cover-to-monitor + swaybg "fill" was cropping the art (looked zoomed-in
+   * next to the letterboxed preview). Apply uses swaybg "fit" instead.
+   */
+  function exportWallpaperPng(_targetW, _targetH) {
+    var src = document.querySelector('#stage canvas') || document.querySelector('canvas');
     if (!src)
       return '';
-
-    if (!targetW || !targetH)
-      return src.toDataURL('image/png');
-
-    targetW = Math.max(640, Math.floor(targetW));
-    targetH = Math.max(360, Math.floor(targetH));
-
-    if (src.width === targetW && src.height === targetH)
-      return src.toDataURL('image/png');
-
-    var out = document.createElement('canvas');
-    out.width = targetW;
-    out.height = targetH;
-    var ctx = out.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = '#141414';
-    ctx.fillRect(0, 0, targetW, targetH);
-
-    // Cover (max): fill the wallpaper PNG edge-to-edge like before. Uniform
-    // scale only (no stretch). swaybg/waypaper "fill" then matches the screen
-    // without an extra zoom — contain+fill was what made Apply look zoomed in.
-    var scale = Math.max(targetW / src.width, targetH / src.height);
-    var dw = src.width * scale;
-    var dh = src.height * scale;
-    var dx = (targetW - dw) / 2;
-    var dy = (targetH - dh) / 2;
-    ctx.drawImage(src, dx, dy, dw, dh);
-    return out.toDataURL('image/png');
+    return src.toDataURL('image/png');
   }
 
   function exportPngDataUrl() {

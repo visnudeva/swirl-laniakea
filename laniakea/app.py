@@ -22,7 +22,6 @@ from laniakea.config import (
     save_config,
     wallpaper_output_path,
 )
-from laniakea.display import wallpaper_pixel_size
 from laniakea.wallpaper import apply_with_swaybg, save_png_bytes
 
 
@@ -184,10 +183,9 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
         if self._busy:
             return
         self._busy = True
-        width, height = wallpaper_pixel_size(self)
-        self._status.set_label(f"Saving what you see → {width}×{height}…")
+        self._status.set_label("Saving exact canvas…")
         self._view.evaluate_javascript(
-            f"exportWallpaperPng({width}, {height})",
+            "exportWallpaperPng()",
             -1,
             None,
             None,
