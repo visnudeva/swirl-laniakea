@@ -6,9 +6,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# Match the in-app letterboxed preview: show the whole image, do not crop-zoom.
-_SWAYBG_MODE = "fit"
-
 
 def update_waypaper_config(image: Path) -> None:
     """Point waypaper at the new image so the next login restore keeps it."""
@@ -21,24 +18,23 @@ def update_waypaper_config(image: Path) -> None:
         parser["Settings"] = {}
     parser["Settings"]["wallpaper"] = str(image)
     parser["Settings"]["backend"] = "swaybg"
-    parser["Settings"]["fill"] = _SWAYBG_MODE
+    # Image is already monitor-sized with letterboxing baked in, so fill is 1:1.
+    parser["Settings"]["fill"] = "fill"
     conf.parent.mkdir(parents=True, exist_ok=True)
     with conf.open("w", encoding="utf-8") as fh:
         parser.write(fh)
 
 
 def apply_with_swaybg(image: Path) -> None:
-    """Set the image with swaybg fit (full artwork, no crop-zoom)."""
+    """Show a monitor-baked PNG. fill is safe because the file is already 1:1."""
     image = image.resolve()
-
-    # Always drive swaybg ourselves with an explicit mode. waypaper's CLI
-    # often reapplies "fill" from an old config and re-introduces the zoom.
     if not shutil.which("swaybg"):
         raise RuntimeError("swaybg is not available")
 
+    # Drop every swaybg (waypaper --restore may have left a fill instance).
     subprocess.run(["pkill", "-x", "swaybg"], check=False)
     subprocess.Popen(
-        ["swaybg", "-i", str(image), "-m", _SWAYBG_MODE],
+        ["swaybg", "-o", "*", "-i", str(image), "-m", "fill"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
