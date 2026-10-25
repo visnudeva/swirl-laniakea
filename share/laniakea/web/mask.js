@@ -12,11 +12,14 @@ export const MASK_MODES = {
 };
 
 export function getCentralAreaDivisor(width) {
-    return width > 768 ? 3 : 4.5;
+    // Always the generous desktop divisor. The old 4.5 path on narrow
+    // widths made the mask shrink badly when the window was tiled to ~50%.
+    return 3;
 }
 
 export function getMaskRadius(height, width) {
-    return height / getCentralAreaDivisor(width);
+    // Size from the shorter side so a half-width tile keeps a large centered shape.
+    return Math.min(height, width) / getCentralAreaDivisor(width);
 }
 
 function _sign(px, py, x1, y1, x2, y2) {

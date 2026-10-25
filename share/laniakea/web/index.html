@@ -12,15 +12,10 @@
       height: 100%;
       overflow: hidden;
       background: #141414;
-      position: relative;
     }
     canvas {
       display: block;
       image-rendering: auto;
-      /* Letterboxed / centered when the GTK window aspect changes. */
-      position: absolute;
-      inset: 0;
-      margin: auto;
     }
   </style>
   <script src="p5.min.js"></script>
@@ -50,9 +45,6 @@
   var b1, b2;
 
   var patternSeed = 1;
-  // Fixed drawing buffer — window resizes only reflow CSS, never reset the art.
-  var drawW = 0;
-  var drawH = 0;
 
   window.LANIAKEA_CONFIG = {
     maskMode: 'circle',
@@ -70,32 +62,13 @@
     pixelDensity(effectiveDensity());
   }
 
+  // Same mid-weight look as when you said the drawing looked good (pre-letterbox).
   function particleSize() {
     return Math.max(0.7, Math.min(1.25, width / 1500));
   }
 
   function strokeWeightForCanvas() {
     return Math.max(0.45, Math.min(0.9, width / 2000));
-  }
-
-  /** Keep the bitmap size fixed; scale+center the canvas in the WebView. */
-  function fitCanvasInViewport() {
-    var canvas = document.querySelector('canvas');
-    if (!canvas || !drawW || !drawH)
-      return;
-
-    var vw = window.innerWidth || drawW;
-    var vh = window.innerHeight || drawH;
-    var scale = Math.min(vw / drawW, vh / drawH);
-    var dw = Math.max(1, Math.floor(drawW * scale));
-    var dh = Math.max(1, Math.floor(drawH * scale));
-    canvas.style.width = dw + 'px';
-    canvas.style.height = dh + 'px';
-    canvas.style.left = Math.floor((vw - dw) / 2) + 'px';
-    canvas.style.top = Math.floor((vh - dh) / 2) + 'px';
-    canvas.style.right = 'auto';
-    canvas.style.bottom = 'auto';
-    canvas.style.margin = '0';
   }
 
   function initPoints() {
@@ -235,9 +208,7 @@
 
   function setup() {
     applyPixelDensity();
-    drawW = Math.max(320, windowWidth);
-    drawH = Math.max(240, windowHeight);
-    createCanvas(drawW, drawH);
+    createCanvas(windowWidth, windowHeight);
     smooth();
     background(20);
     angleMode(DEGREES);
@@ -247,7 +218,6 @@
     noiseSeed(patternSeed);
     initPoints();
     initColors();
-    fitCanvasInViewport();
   }
 
   function draw() {
@@ -259,9 +229,30 @@
       resetDrawing(false);
   }
 
+  /**
+   * Fill the window again (full-size mask/shape). Keep the existing artwork —
+   * stretch the snapshot and scale particle positions. Never wipe / re-roll.
+   */
   function windowResized() {
-    // Do not resizeCanvas / resetDrawing — keep the same centered artwork.
-    fitCanvasInViewport();
+    if (typeof width === 'undefined' || width === 0)
+      return;
+    if (windowWidth === width && windowHeight === height)
+      return;
+
+    var oldW = width;
+    var oldH = height;
+    var snap = get();
+
+    applyPixelDensity();
+    resizeCanvas(windowWidth, windowHeight);
+    image(snap, 0, 0, width, height);
+
+    var sx = width / oldW;
+    var sy = height / oldH;
+    for (var i = 0; i < points.length; i++) {
+      points[i].x *= sx;
+      points[i].y *= sy;
+    }
   }
 
   window.setup = setup;
@@ -273,7 +264,6 @@
   window.exportPngDataUrl = exportPngDataUrl;
   window.exportWallpaperPng = exportWallpaperPng;
   window.applyPixelDensity = applyPixelDensity;
-  window.fitCanvasInViewport = fitCanvasInViewport;
 </script>
 
 </body>

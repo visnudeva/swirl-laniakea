@@ -17,7 +17,7 @@ This is the Wayland / Swirl sibling of the [GNOME Shell extension](https://githu
 - **Click to regenerate** — primary-click inside the shape mask to start a new drawing
 - **Shape masks** — limit where particles appear (circle, triangles, diamond, hexagon, rectangles, or full screen)
 - **Apply to desktop** — writes `~/Pictures/Wallpapers/laniakea.png` and sets it with swaybg / waypaper
-- **Resize-friendly** — tiling the window letterboxes the artwork instead of wiping it
+- **Resize-friendly** — tiling keeps the artwork (stretched to fill); it does not wipe and re-roll
 - **Offline** — p5.js is vendored; no CDN required
 
 ## Customization
@@ -86,10 +86,6 @@ sudo ./build.sh --build-laniakea
 
 - Confirm `swaybg` or `waypaper` is installed.
 - Check that `~/Pictures/Wallpapers/laniakea.png` was written.
-
-**Drawing looks soft after tiling smaller then maximising?**
-
-- The canvas buffer is fixed when the window first opens so resize does not wipe the art. Open Laniakea already large (or Redraw after maximising) for a denser buffer.
 
 **Click-to-regenerate not working?**
 
