@@ -13,14 +13,24 @@
       overflow: hidden;
       background: #141414;
     }
-    canvas {
+    #stage {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #141414;
+    }
+    #stage canvas {
       display: block;
       image-rendering: auto;
+      flex: 0 0 auto;
     }
   </style>
   <script src="p5.min.js"></script>
 </head>
 <body>
+<div id="stage"></div>
 
 <script type="module">
   import {
@@ -45,6 +55,9 @@
   var b1, b2;
 
   var patternSeed = 1;
+  // Fixed bitmap from first layout. Resize only reflows CSS (uniform scale).
+  var drawW = 0;
+  var drawH = 0;
 
   window.LANIAKEA_CONFIG = {
     maskMode: 'circle',
@@ -69,6 +82,26 @@
 
   function strokeWeightForCanvas() {
     return Math.max(0.45, Math.min(0.9, width / 2000));
+  }
+
+  /**
+   * Center the fixed bitmap with UNIFORM scale (no X/Y stretch).
+   * Scale may go above 1 when the window is larger than the bitmap — that is
+   * what makes a maximised preview match the wallpaper (the old scale≤1 cap
+   * left a tiny preview while Apply filled the monitor → looked zoomed).
+   */
+  function fitCanvasInViewport() {
+    var canvas = document.querySelector('#stage canvas') || document.querySelector('canvas');
+    if (!canvas || !drawW || !drawH)
+      return;
+
+    var vw = window.innerWidth || drawW;
+    var vh = window.innerHeight || drawH;
+    var scale = Math.min(vw / drawW, vh / drawH);
+    var dw = Math.max(1, Math.round(drawW * scale));
+    var dh = Math.max(1, Math.round(drawH * scale));
+    canvas.style.setProperty('width', dw + 'px', 'important');
+    canvas.style.setProperty('height', dh + 'px', 'important');
   }
 
   function initPoints() {
@@ -170,9 +203,12 @@
     );
   }
 
-  // Known-good Apply path (same as before letterbox): cover-scale to display.
+  /**
+   * Bake the live bitmap into a monitor-sized PNG with the SAME contain
+   * framing as fitCanvasInViewport. swaybg "fill" then shows 1:1 — no crop.
+   */
   function exportWallpaperPng(targetW, targetH) {
-    var src = document.querySelector('canvas');
+    var src = document.querySelector('#stage canvas') || document.querySelector('canvas');
     if (!src)
       return '';
 
@@ -194,7 +230,7 @@
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, targetW, targetH);
 
-    var scale = Math.max(targetW / src.width, targetH / src.height);
+    var scale = Math.min(targetW / src.width, targetH / src.height);
     var dw = src.width * scale;
     var dh = src.height * scale;
     var dx = (targetW - dw) / 2;
@@ -209,7 +245,14 @@
 
   function setup() {
     applyPixelDensity();
-    createCanvas(windowWidth, windowHeight);
+    drawW = Math.max(320, windowWidth);
+    drawH = Math.max(240, windowHeight);
+    var canvas = createCanvas(drawW, drawH);
+    if (canvas && canvas.elt) {
+      var stage = document.getElementById('stage');
+      if (stage)
+        stage.appendChild(canvas.elt);
+    }
     smooth();
     background(20);
     angleMode(DEGREES);
@@ -219,10 +262,13 @@
     noiseSeed(patternSeed);
     initPoints();
     initColors();
+    fitCanvasInViewport();
   }
 
   function draw() {
     stepPoints();
+    // p5 rewrites canvas CSS size each frame — keep letterbox framing.
+    fitCanvasInViewport();
   }
 
   function mousePressed() {
@@ -230,36 +276,9 @@
       resetDrawing(false);
   }
 
-  /**
-   * Canvas always fills the window (so Apply framing matches the preview,
-   * like before CSS letterboxing broke that). On resize, paste the old art
-   * with UNIFORM scale (contain) — never stretch X/Y differently.
-   */
   function windowResized() {
-    if (typeof width === 'undefined' || width === 0)
-      return;
-    if (windowWidth === width && windowHeight === height)
-      return;
-
-    var oldW = width;
-    var oldH = height;
-    var snap = get();
-
-    applyPixelDensity();
-    resizeCanvas(windowWidth, windowHeight);
-    background(20);
-
-    var scale = Math.min(width / oldW, height / oldH);
-    var dw = oldW * scale;
-    var dh = oldH * scale;
-    var dx = (width - dw) / 2;
-    var dy = (height - dh) / 2;
-    image(snap, dx, dy, dw, dh);
-
-    for (var i = 0; i < points.length; i++) {
-      points[i].x = points[i].x * scale + dx;
-      points[i].y = points[i].y * scale + dy;
-    }
+    // Bitmap and mask stay as-is — only the on-screen scale changes.
+    fitCanvasInViewport();
   }
 
   window.setup = setup;
@@ -271,6 +290,7 @@
   window.exportPngDataUrl = exportPngDataUrl;
   window.exportWallpaperPng = exportWallpaperPng;
   window.applyPixelDensity = applyPixelDensity;
+  window.fitCanvasInViewport = fitCanvasInViewport;
 </script>
 
 </body>

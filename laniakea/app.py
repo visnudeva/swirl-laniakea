@@ -15,6 +15,7 @@ gi.require_version("Pango", "1.0")
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango, WebKit
 
+from laniakea import __version__
 from laniakea.config import (
     MASK_MODE_LABELS,
     MASK_MODE_VALUES,
@@ -120,7 +121,8 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
             raise SystemExit(f"missing web assets at {root}")
         self._view.connect("load-changed", self._on_load_changed)
         self.connect("notify::scale-factor", self._on_scale_factor)
-        self._view.load_uri(index.resolve().as_uri())
+        # Cache-bust so WebKit does not keep a stale index.html after upgrades.
+        self._view.load_uri(index.resolve().as_uri() + f"?v={__version__}")
         Gtk.Widget.set_vexpand(self._view, True)
         Gtk.Widget.set_hexpand(self._view, True)
 
@@ -151,6 +153,7 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
             f"if (typeof applyPixelDensity === 'function') applyPixelDensity();"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
             f"if (typeof setMaskMode === 'function') setMaskMode({mode!r});"
         )
 
@@ -159,12 +162,14 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
             f"if (typeof applyPixelDensity === 'function') applyPixelDensity();"
+            f"if (typeof fitCanvasInViewport === 'function') fitCanvasInViewport();"
         )
 
     def _on_load_changed(self, _view: WebKit.WebView, event: WebKit.LoadEvent) -> None:
         if event != WebKit.LoadEvent.FINISHED:
             return
         self._inject_scale_and_mask()
+        self._status.set_label(f"Drawing… v{__version__}")
 
     def _on_mask_changed(self, dropdown: Gtk.DropDown, *_args) -> None:
         idx = int(dropdown.get_selected())
@@ -184,8 +189,8 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
             return
         self._busy = True
         width, height = wallpaper_pixel_size(self)
-        self._status.set_label(f"Saving what you see → {width}×{height}…")
-        # Known-good Apply path: live canvas → cover-scale to display.
+        self._status.set_label(f"Saving contain {width}×{height}…")
+        # Contain-bake to monitor size (same framing as the on-screen letterbox).
         self._view.evaluate_javascript(
             f"exportWallpaperPng({width}, {height})",
             -1,

@@ -2,18 +2,13 @@
 from __future__ import annotations
 
 import configparser
-import os
 import shutil
 import subprocess
 from pathlib import Path
 
 
-def _expand(path: str) -> str:
-    return os.path.expanduser(path)
-
-
 def update_waypaper_config(image: Path) -> None:
-    """Point waypaper at the new image so the next login restore keeps it."""
+    """Remember the image for next login. Do not let waypaper re-launch swaybg."""
     conf = Path.home() / ".config" / "waypaper" / "config.ini"
     if not conf.is_file():
         return
@@ -23,6 +18,7 @@ def update_waypaper_config(image: Path) -> None:
         parser["Settings"] = {}
     parser["Settings"]["wallpaper"] = str(image)
     parser["Settings"]["backend"] = "swaybg"
+    # PNG is already exact output size with contain framing baked in.
     parser["Settings"]["fill"] = "fill"
     conf.parent.mkdir(parents=True, exist_ok=True)
     with conf.open("w", encoding="utf-8") as fh:
@@ -30,25 +26,16 @@ def update_waypaper_config(image: Path) -> None:
 
 
 def apply_with_swaybg(image: Path) -> None:
-    """Replace the current swaybg instance with this image (fill)."""
+    """Show the monitor-baked PNG. fill is 1:1 (no extra crop/zoom)."""
     image = image.resolve()
-    if shutil.which("waypaper"):
-        # Prefer waypaper so restore + GUI stay in sync.
-        subprocess.Popen(
-            ["waypaper", "--wallpaper", str(image)],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        update_waypaper_config(image)
-        return
-
-    # Fallback: kill previous swaybg and start a new one.
-    subprocess.run(["pkill", "-x", "swaybg"], check=False)
     if not shutil.which("swaybg"):
-        raise RuntimeError("neither waypaper nor swaybg is available")
+        raise RuntimeError("swaybg is not available")
+
+    # Drive swaybg ourselves. waypaper --wallpaper often forces fill on a
+    # non-baked image and re-introduces crop-zoom.
+    subprocess.run(["pkill", "-x", "swaybg"], check=False)
     subprocess.Popen(
-        ["swaybg", "-i", str(image), "-m", "fill"],
+        ["swaybg", "-o", "*", "-i", str(image), "-m", "fill"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
