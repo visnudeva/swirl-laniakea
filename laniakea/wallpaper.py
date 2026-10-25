@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import configparser
+import os
 import shutil
 import subprocess
 from pathlib import Path
+
+
+def _expand(path: str) -> str:
+    return os.path.expanduser(path)
 
 
 def update_waypaper_config(image: Path) -> None:
@@ -18,7 +23,6 @@ def update_waypaper_config(image: Path) -> None:
         parser["Settings"] = {}
     parser["Settings"]["wallpaper"] = str(image)
     parser["Settings"]["backend"] = "swaybg"
-    # Image is already monitor-sized with letterboxing baked in, so fill is 1:1.
     parser["Settings"]["fill"] = "fill"
     conf.parent.mkdir(parents=True, exist_ok=True)
     with conf.open("w", encoding="utf-8") as fh:
@@ -26,15 +30,25 @@ def update_waypaper_config(image: Path) -> None:
 
 
 def apply_with_swaybg(image: Path) -> None:
-    """Show a monitor-baked PNG. fill is safe because the file is already 1:1."""
+    """Replace the current swaybg instance with this image (fill)."""
     image = image.resolve()
-    if not shutil.which("swaybg"):
-        raise RuntimeError("swaybg is not available")
+    if shutil.which("waypaper"):
+        # Prefer waypaper so restore + GUI stay in sync.
+        subprocess.Popen(
+            ["waypaper", "--wallpaper", str(image)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        update_waypaper_config(image)
+        return
 
-    # Drop every swaybg (waypaper --restore may have left a fill instance).
+    # Fallback: kill previous swaybg and start a new one.
     subprocess.run(["pkill", "-x", "swaybg"], check=False)
+    if not shutil.which("swaybg"):
+        raise RuntimeError("neither waypaper nor swaybg is available")
     subprocess.Popen(
-        ["swaybg", "-o", "*", "-i", str(image), "-m", "fill"],
+        ["swaybg", "-i", str(image), "-m", "fill"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

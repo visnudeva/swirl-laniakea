@@ -185,8 +185,8 @@ class LaniakeaWindow(Gtk.ApplicationWindow):
             return
         self._busy = True
         width, height = wallpaper_pixel_size(self)
-        self._status.set_label(f"Baking wallpaper {width}×{height}…")
-        # Monitor-sized PNG with uniform letterboxing — fill cannot crop-zoom it.
+        self._status.set_label(f"Saving what you see → {width}×{height}…")
+        # Known-good Apply path: live canvas → cover-scale to display.
         self._view.evaluate_javascript(
             f"exportWallpaperPng({width}, {height})",
             -1,
