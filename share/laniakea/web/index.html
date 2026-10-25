@@ -235,8 +235,10 @@
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, targetW, targetH);
 
-    // Contain (min), not cover (max) — wallpaper must not crop/warp the shape.
-    var scale = Math.min(targetW / src.width, targetH / src.height);
+    // Cover (max): fill the wallpaper PNG edge-to-edge like before. Uniform
+    // scale only (no stretch). swaybg/waypaper "fill" then matches the screen
+    // without an extra zoom — contain+fill was what made Apply look zoomed in.
+    var scale = Math.max(targetW / src.width, targetH / src.height);
     var dw = src.width * scale;
     var dh = src.height * scale;
     var dx = (targetW - dw) / 2;
