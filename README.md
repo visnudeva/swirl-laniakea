@@ -7,7 +7,7 @@ Laniakea draws a relaxing particle field in a live window. Watch colours drift a
 This is the Wayland / Swirl sibling of the [GNOME Shell extension](https://github.com/visnudeva/Laniakea). Same sketch spirit and masks; no GNOME Shell required.
 
 <p align="center">
-  <img src="assets/laniakea-preview.jpg" alt="Laniakea generative flow-field preview" width="860" />
+  <img src="assets/laniakea-preview.png" alt="Laniakea generative flow-field preview" width="860" />
 </p>
 
 ## Features
