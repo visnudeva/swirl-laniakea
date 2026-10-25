@@ -25,9 +25,6 @@ from laniakea.config import (
 from laniakea.display import wallpaper_pixel_size
 from laniakea.wallpaper import apply_with_swaybg, save_png_bytes
 
-# Match Swirl default_decoration border_radius.
-_CORNER_RADIUS_PX = 8
-
 
 def web_root() -> Path:
     env = os.environ.get("LANIAKEA_WEB_ROOT")
@@ -39,50 +36,33 @@ def web_root() -> Path:
     return Path(__file__).resolve().parents[1] / "share" / "laniakea" / "web"
 
 
-def _install_window_css_for_display(display) -> None:
-    css = f"""
-    window.laniakea-window {{
-      border-radius: {_CORNER_RADIUS_PX}px;
-    }}
-    window.laniakea-window headerbar {{
-      border-top-left-radius: {_CORNER_RADIUS_PX}px;
-      border-top-right-radius: {_CORNER_RADIUS_PX}px;
-    }}
+class LaniakeaWindow(Gtk.ApplicationWindow):
+    """Plain Gtk window (SSD) so Swirl's border_radius clips WebKit like other apps.
+
+    Adw CSD + WebKit hardware layers were leaving square corners; disabling
+    acceleration fixed corners but hurt drawing quality. SSD keeps both.
     """
-    provider = Gtk.CssProvider()
-    provider.load_from_data(css.encode("utf-8"))
-    Gtk.StyleContext.add_provider_for_display(
-        display,
-        provider,
-        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
-    )
 
-
-class LaniakeaWindow(Adw.ApplicationWindow):
-    def __init__(self, app: Adw.Application) -> None:
+    def __init__(self, app: Gtk.Application) -> None:
         super().__init__(application=app, title="Laniakea")
-        self.add_css_class("laniakea-window")
         self.set_default_size(960, 640)
-        # Keep chrome usable when tiled to half a laptop screen.
         self.set_size_request(420, 320)
+        # No client titlebar — Swirl draws decorations and applies border_radius.
+        self.set_decorated(True)
         self._cfg = load_config()
         self._busy = False
 
-        display = self.get_display()
-        if display is not None:
-            _install_window_css_for_display(display)
-
         self._install_actions()
 
-        toolbar = Adw.HeaderBar()
-        self._status = Gtk.Label(
-            label="Drawing… click the mask to redraw",
-            ellipsize=Pango.EllipsizeMode.END,
-            max_width_chars=18,
-            hexpand=True,
+        toolbar = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=6,
+            margin_start=8,
+            margin_end=8,
+            margin_top=6,
+            margin_bottom=6,
         )
-        self._status.add_css_class("dim-label")
-        toolbar.set_title_widget(self._status)
+        toolbar.add_css_class("toolbar")
 
         self._mask = Gtk.DropDown.new_from_strings(MASK_MODE_LABELS)
         self._mask.set_tooltip_text("Shape mask")
@@ -92,9 +72,18 @@ class LaniakeaWindow(Adw.ApplicationWindow):
             idx = 0
         self._mask.set_selected(idx)
         self._mask.connect("notify::selected", self._on_mask_changed)
-        toolbar.pack_start(self._mask)
+        toolbar.append(self._mask)
 
-        # Compact actions so half-width tiles still expose every control.
+        self._status = Gtk.Label(
+            label="Drawing… click the mask to redraw",
+            ellipsize=Pango.EllipsizeMode.END,
+            max_width_chars=18,
+            hexpand=True,
+            xalign=0.0,
+        )
+        self._status.add_css_class("dim-label")
+        toolbar.append(self._status)
+
         menu = Gio.Menu()
         menu.append("Redraw", "win.redraw")
         menu.append("Save PNG", "win.save")
@@ -104,23 +93,23 @@ class LaniakeaWindow(Adw.ApplicationWindow):
             icon_name="open-menu-symbolic",
             tooltip_text="Actions",
         )
-        toolbar.pack_end(menu_btn)
+        toolbar.append(menu_btn)
 
         apply_btn = Gtk.Button(label="Apply")
         apply_btn.set_tooltip_text("Apply wallpaper")
         apply_btn.add_css_class("suggested-action")
         apply_btn.connect("clicked", lambda *_: self._export(apply=True))
-        toolbar.pack_end(apply_btn)
+        toolbar.append(apply_btn)
 
         self._view = WebKit.WebView()
         settings = self._view.get_settings()
         settings.set_enable_write_console_messages_to_stdout(True)
         settings.set_allow_file_access_from_file_urls(True)
         settings.set_allow_universal_access_from_file_urls(True)
-        # Hardware layers often ignore Swirl's border_radius clip; paint in-tree instead.
+        # Restore sharp live drawing (was NEVER in 0.1.4 for corners).
         try:
             settings.set_hardware_acceleration_policy(
-                WebKit.HardwareAccelerationPolicy.NEVER
+                WebKit.HardwareAccelerationPolicy.ALWAYS
             )
         except (AttributeError, TypeError):
             pass
@@ -132,11 +121,13 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         self._view.connect("load-changed", self._on_load_changed)
         self.connect("notify::scale-factor", self._on_scale_factor)
         self._view.load_uri(index.resolve().as_uri())
+        Gtk.Widget.set_vexpand(self._view, True)
+        Gtk.Widget.set_hexpand(self._view, True)
 
-        toolbar_view = Adw.ToolbarView()
-        toolbar_view.add_top_bar(toolbar)
-        toolbar_view.set_content(self._view)
-        self.set_content(toolbar_view)
+        root_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        root_box.append(toolbar)
+        root_box.append(self._view)
+        self.set_child(root_box)
 
     def _install_actions(self) -> None:
         for name, callback in (
@@ -157,8 +148,6 @@ class LaniakeaWindow(Adw.ApplicationWindow):
     def _inject_scale_and_mask(self) -> None:
         mode = self._cfg["mask_mode"]
         scale = self._gtk_scale()
-        # First load only: set density + mask. Do not resizeCanvas (that would
-        # fight the fixed drawing buffer / letterbox layout).
         self._run_js(
             f"window.LANIAKEA_GTK_SCALE = {scale};"
             f"if (typeof applyPixelDensity === 'function') applyPixelDensity();"
@@ -249,7 +238,9 @@ class LaniakeaWindow(Adw.ApplicationWindow):
         self._status.set_label(f"Wallpaper applied → {dest}")
 
 
-class LaniakeaApp(Adw.Application):
+class LaniakeaApp(Gtk.Application):
+    # Gtk.Application (not Adw) so the window can use Swirl server-side
+    # decorations and pick up border_radius like foot/other SSD apps.
     def __init__(self) -> None:
         super().__init__(
             application_id="io.github.visnudeva.Laniakea",
